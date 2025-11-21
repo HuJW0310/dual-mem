@@ -76,11 +76,36 @@ class Qwen3VLWrapper:
         if not frames:
             raise ValueError("frames list cannot be empty")
         
-        # 使用processor处理图像
-        inputs = self.processor(
-            images=frames,
-            return_tensors="pt"
-        ).to(self.device)
+        # 对于 Qwen2.5-VL，processor 需要文本输入
+        # 检查是否是 Qwen2.5-VL processor（通过检查 processor 类型）
+        is_qwen2_5 = "qwen2_5" in str(type(self.processor)).lower() or "qwen2.5" in str(type(self.processor)).lower()
+        
+        if is_qwen2_5:
+            # Qwen2.5-VL 需要文本输入，使用一个简单的占位符文本
+            # 使用列表格式，每个图像对应一个文本
+            text_list = [""] * len(frames)
+            inputs = self.processor(
+                text=text_list,
+                images=frames,
+                return_tensors="pt",
+                padding=True
+            ).to(self.device)
+        else:
+            # Qwen2-VL 可以直接处理图像
+            try:
+                inputs = self.processor(
+                    images=frames,
+                    return_tensors="pt"
+                ).to(self.device)
+            except Exception as e:
+                # 如果失败，尝试提供文本输入
+                text_list = [""] * len(frames)
+                inputs = self.processor(
+                    text=text_list,
+                    images=frames,
+                    return_tensors="pt",
+                    padding=True
+                ).to(self.device)
         
         # 获取vision encoder输出
         # 兼容 Qwen2-VL 和 Qwen2.5-VL 的不同结构
@@ -280,11 +305,36 @@ class Qwen2_5_VLWrapper:
         if not frames:
             raise ValueError("frames list cannot be empty")
         
-        # 使用processor处理图像
-        inputs = self.processor(
-            images=frames,
-            return_tensors="pt"
-        ).to(self.device)
+        # 对于 Qwen2.5-VL，processor 需要文本输入
+        # 检查是否是 Qwen2.5-VL processor（通过检查 processor 类型）
+        is_qwen2_5 = "qwen2_5" in str(type(self.processor)).lower() or "qwen2.5" in str(type(self.processor)).lower()
+        
+        if is_qwen2_5:
+            # Qwen2.5-VL 需要文本输入，使用一个简单的占位符文本
+            # 使用列表格式，每个图像对应一个文本
+            text_list = [""] * len(frames)
+            inputs = self.processor(
+                text=text_list,
+                images=frames,
+                return_tensors="pt",
+                padding=True
+            ).to(self.device)
+        else:
+            # Qwen2-VL 可以直接处理图像
+            try:
+                inputs = self.processor(
+                    images=frames,
+                    return_tensors="pt"
+                ).to(self.device)
+            except Exception as e:
+                # 如果失败，尝试提供文本输入
+                text_list = [""] * len(frames)
+                inputs = self.processor(
+                    text=text_list,
+                    images=frames,
+                    return_tensors="pt",
+                    padding=True
+                ).to(self.device)
         
         # 获取vision encoder输出
         # 兼容 Qwen2-VL 和 Qwen2.5-VL 的不同结构
