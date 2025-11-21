@@ -8,9 +8,39 @@ from PIL import Image
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
 from qwen_vl_utils import process_vision_info
 
+# 尝试导入 Qwen2.5-VL 模型类（如果可用）
+try:
+    from transformers import Qwen2_5_VLForConditionalGeneration
+    HAS_QWEN2_5_VL = True
+except ImportError:
+    # 如果 transformers 版本较旧，可能没有这个类
+    HAS_QWEN2_5_VL = False
+    Qwen2_5_VLForConditionalGeneration = None
+
 # 延迟导入以避免循环依赖
 if TYPE_CHECKING:
     from .memory_module import MemoryItem, ExplicitMemoryManager, ImplicitMemoryBank
+
+
+def _get_model_class(model_name: str):
+    """
+    根据模型名称返回正确的模型类
+    不使用 AutoModel，而是根据模型名称手动判断
+    """
+    model_name_lower = model_name.lower()
+    
+    # 检查是否是 Qwen2.5-VL
+    if "qwen2.5" in model_name_lower or "qwen2_5" in model_name_lower:
+        if HAS_QWEN2_5_VL and Qwen2_5_VLForConditionalGeneration is not None:
+            return Qwen2_5_VLForConditionalGeneration
+        else:
+            raise ImportError(
+                f"Qwen2.5-VL model detected but Qwen2_5_VLForConditionalGeneration is not available. "
+                f"Please upgrade transformers: pip install --upgrade transformers"
+            )
+    else:
+        # 默认使用 Qwen2-VL
+        return Qwen2VLForConditionalGeneration
 
 
 class Qwen3VLWrapper:
@@ -22,12 +52,17 @@ class Qwen3VLWrapper:
             device: 设备类型
         """
         self.device = device
-        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+        self.model_name = model_name
+        
+        # 根据模型名称选择正确的模型类
+        model_class = _get_model_class(model_name)
+        self.model = model_class.from_pretrained(
             model_name,
             torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
-            device_map=device
+            device_map=device,
+            trust_remote_code=True
         ).eval()
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
         
     @torch.no_grad()
     def encode_clip(self, frames: List[Image.Image]) -> Dict[str, torch.Tensor]:
@@ -48,7 +83,13 @@ class Qwen3VLWrapper:
         ).to(self.device)
         
         # 获取vision encoder输出
-        vision_outputs = self.model.model.visual(**inputs['pixel_values'])
+        # 兼容 Qwen2-VL 和 Qwen2.5-VL 的不同结构
+        if hasattr(self.model, 'model') and hasattr(self.model.model, 'visual'):
+            vision_outputs = self.model.model.visual(**inputs['pixel_values'])
+        elif hasattr(self.model, 'visual'):
+            vision_outputs = self.model.visual(**inputs['pixel_values'])
+        else:
+            raise AttributeError(f"Cannot find vision encoder in model {self.model_name}")
         
         # 提取patch tokens和全局特征
         # vision_outputs.last_hidden_state: (batch, num_patches, hidden_size)
@@ -215,12 +256,17 @@ class Qwen2_5_VLWrapper:
             device: 设备类型
         """
         self.device = device
-        self.model = Qwen2VLForConditionalGeneration.from_pretrained(
+        self.model_name = model_name
+        
+        # 根据模型名称选择正确的模型类
+        model_class = _get_model_class(model_name)
+        self.model = model_class.from_pretrained(
             model_name,
             torch_dtype=torch.bfloat16 if device == "cuda" else torch.float32,
-            device_map=device
+            device_map=device,
+            trust_remote_code=True
         ).eval()
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        self.processor = AutoProcessor.from_pretrained(model_name, trust_remote_code=True)
         
     @torch.no_grad()
     def encode_clip(self, frames: List[Image.Image]) -> Dict[str, torch.Tensor]:
@@ -241,7 +287,13 @@ class Qwen2_5_VLWrapper:
         ).to(self.device)
         
         # 获取vision encoder输出
-        vision_outputs = self.model.model.visual(**inputs['pixel_values'])
+        # 兼容 Qwen2-VL 和 Qwen2.5-VL 的不同结构
+        if hasattr(self.model, 'model') and hasattr(self.model.model, 'visual'):
+            vision_outputs = self.model.model.visual(**inputs['pixel_values'])
+        elif hasattr(self.model, 'visual'):
+            vision_outputs = self.model.visual(**inputs['pixel_values'])
+        else:
+            raise AttributeError(f"Cannot find vision encoder in model {self.model_name}")
         
         # 提取patch tokens和全局特征
         patch_tokens = vision_outputs.last_hidden_state  # (B, N_patches, D)
